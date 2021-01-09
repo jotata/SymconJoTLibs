@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   01.01.2021 19:09:10
+ * @Last Modified:   09.01.2021 21:01:52
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -162,8 +162,15 @@ trait Translation {
         }
         return $JSON;
     }
-    private function TranslateVarType($value) {
-        switch ($value) {
+
+    /**
+     * Übersetzt IPS-Variablen-Typ in lesbaren String.
+     * @param int $VarType gemäss IPS Konstanten VARIABLETYPE_xx
+     * @return string mit entsprechendem Text.
+     * @access private
+     */
+    private function TranslateVarType(int $VarType) {
+        switch ($VarType) {
             case -1:
                 return $this->Translate('All');
             case VARIABLETYPE_BOOLEAN:
@@ -172,23 +179,32 @@ trait Translation {
                 return 'Float';
             case VARIABLETYPE_INTEGER:
                 return 'Integer';
+            case 10: //Unsigned Integer (PHP selber ist immer Signed Integer)
+                return 'uInteger';
             case VARIABLETYPE_STRING:
                 return 'String';
         }
-        return $value;
+        return $VarType;
     }
-    private function TranslateObjType($value) {
+
+    /**
+     * Übersetzt IPS-Objekt (Modul-GUID oder Konstante OBJECTTYPE_xxx) in lesbaren String.
+     * @param mixed $Obj
+     * @return string mit entsprechendem Text.
+     * @access private
+     */
+    private function TranslateObjType($Obj) {
         //Modul-Bezeichnung
-        if ((substr($value, 0, 1) . substr($value, -1)) == '{}') {//Modul-GUID
-            if (IPS_ModuleExists($value)) {
-                $m = IPS_GetModule($value);
+        if (is_string($Obj) && (substr($Obj, 0, 1) . substr($Obj, -1)) === '{}') { //Modul-GUID
+            if (IPS_ModuleExists($Obj)) {
+                $m = IPS_GetModule($Obj);
                 if ($m['Vendor'] != '') {
                     return $m['ModuleName'] . ' (' . $m['Vendor'] . ')';
                 }
                 return $m['ModuleName'];
             }
-        } else {//ObjectType
-            switch ($value) {
+        } else { //ObjectType
+            switch ($Obj) {
                 case '':
                 case -1:
                     return $this->Translate('All');
@@ -208,7 +224,7 @@ trait Translation {
                     return $this->Translate('Variable');
             }
         }
-        return $value;
+        return $Obj;
     }
 
     /**
