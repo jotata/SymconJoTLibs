@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   07.01.2021 13:12:19
+ * @Last Modified:   09.01.2021 22:51:03
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -20,6 +20,7 @@ require_once __DIR__ . '/../libs/JoT_Traits.php';  //Bibliothek mit allgemeinen 
  */
 class JoTModBus extends IPSModule {
     use VariableProfile;
+    use Translation;
     protected const VT_Boolean = VARIABLETYPE_BOOLEAN;
     protected const VT_Integer = VARIABLETYPE_INTEGER;
     protected const VT_UnsignedInteger = 10;
@@ -55,6 +56,8 @@ class JoTModBus extends IPSModule {
     public function Create() {
         parent::create();
         $this->ConnectParent('{A5F663AB-C400-4FE5-B207-4D67CC030564}'); //ModBus Gateway
+        $this->RegisterAttributeInteger('SystemEndianness', $this->GetSystemEndianness());
+        $this->RegisterPropertyBoolean('WriteMode', false); //User muss bestätigen, dass er schreiben will
     }
 
     /**
@@ -101,7 +104,7 @@ class JoTModBus extends IPSModule {
      * @return mixed der angeforderte Wert oder NULL im Fehlerfall
      */
     protected function ReadModBus(int $Function, int $Address, int $Quantity, $Factor, int $MBType, int $VarType) {
-        if ($Function > self::FC_Read_InputRegisters) {
+        if (!in_array($Function, [self::FC_Read_Coil, self::FC_Read_DiscreteInput, self::FC_Read_HoldingRegisters, self::FC_Read_InputRegisters])) {
             echo "Wrong Function ($Function) for Read. Please use WriteModBus."; //Wird nur für Programmierer auftauchen, daher so
             return null;
         }
@@ -125,6 +128,79 @@ class JoTModBus extends IPSModule {
             //Daten auswerten
             if ($readData !== false) {//kein Fehler - empfangene Daten verarbeiten
                 $readValue = substr($readData, 2); //Geräte-Adresse & Funktion aus der Antwort entfernen
+                $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RX RAW", $readValue, 1);
+                $value = $this->SwapValue($readValue, $MBType);
+                $this->SendDebug("SwapValue Addr $Address MBType $MBType", $value, 1);
+                $value = $this->ConvertMBtoPHP($value, $VarType, $Quantity);
+                $this->SendDebug("ConvertMBtoPHP Addr $Address VarType " . $this->TranslateVarType($VarType), $value, 0);
+                $value = $this->CalcFactor($value, $Factor);
+                $this->SendDebug("CalcFactor Addr $Address Factor (*) $Factor", $value, 0);
+                if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
+                    $this->SetStatus(self::STATUS_Ok_InstanceActive);
+                }
+                return $value;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Schreibt ModBus-Daten auf das Gerät zurück
+     * @param mixed $Value - denr zu schreibende Wert
+     * @param int $Function - ModBus-Function (siehe const FC_Write_xyz)
+     * @param int $Address - Start-Register
+     * @param int $Quantity - Anzahl der zu lesenden Register
+     * @param int/float $Factor - Divisionsfaktor für den zu schreibenden Wert
+     * @param int $MBType - Art der Daten-Übertragung (siehe const MB_xyz)
+     * @param int $VarType - Daten-Typ des zu schreibenden Wertes (siehe const VT_xyz)
+     * @return mixed true bei Erfolg oder false bei Fehler
+     */
+    protected function WriteModBus($Value, int $Function, int $Address, int $Quantity, $Factor, int $MBType, int $VarType) {
+        //Kontrolliert mit https://www.scadacore.com/tools/programming-calculators/online-hex-converter/
+        if (!in_array($Function, [self::FC_Write_SingleCoil, self::FC_Write_MultipleCoils, self::FC_Write_SingleHoldingRegister, self::FC_Write_MultipleHoldingRegisters])) {
+            echo "Wrong Function ($Function) for Write. Please use ReadModBus."; //Wird nur für Programmierer auftauchen, daher so
+            return false;
+        }
+        if ($this->ReadPropertyBoolean('WriteMode') !== true) { //User muss aktiv bestätigt haben, dass er schreiben will
+            $msg = $this->ThrowMessage('WriteMode is disabled in instance configuration.');
+            $this->LogMessage($msg, KL_ERROR);
+            return false;
+        }
+        if ($this->CheckConnection() === true) {
+            //Wert umrechnen
+            $this->SendDebug("WriteModBus FC $Function Addr $Address", $Value, 0);
+            $Value = $this->CalcFactor($Value, $Factor, true);
+            $this->SendDebug("CalcFactor Addr $Address Factor (/) $Factor", $Value, 0);
+            $Value = $this->ConvertPHPtoMB($Value, $VarType, $Quantity);
+            $this->SendDebug("ConvertPHPtoMB Addr $Address x $Quantity VarType " . $this->TranslateVarType($VarType), $Value, 1);
+            $Value = $this->SwapValue($Value, $MBType);
+            $this->SendDebug("SwapValue Addr $Address MBType " . $this->TranslateMBType($MBType), $Value, 1);
+            $this->SendDebug("WriteModBus FC $Function Addr $Address x $Quantity TX RAW", $Value, 1);
+
+            //Daten für ModBus-Gateway vorbereiten
+            $sendData = [];
+            //$sendData['DataID'] = '{018EF6B5-AB94-40C6-AA53-46943E824ACF}'; //ModBus Gateway TX?? var_dump(IPS_GetModule('{A5F663AB-C400-4FE5-B207-4D67CC030564}'));
+            $sendData['DataID'] = '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'; //ModBus Gateway
+            $sendData['Function'] = $Function;
+            $sendData['Address'] = $Address;
+            $sendData['Quantity'] = $Quantity;
+            $sendData['Data'] = bin2hex($Value);
+
+            //Error-Handler setzen und Daten schreiben
+            set_error_handler([$this, 'ModBusErrorHandler']);
+            $this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
+            //$writeData = $this->SendDataToParent(json_encode($sendData));
+            $writeData = true;
+            restore_error_handler();
+            $this->CurrentAction = false;
+
+            //Daten auswerten
+            if ($writeData !== false) {//kein Fehler - empfangene Daten kontrollieren
+                if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
+                    $this->SetStatus(self::STATUS_Ok_InstanceActive);
+                }
+
+                /*$readValue = substr($readData, 2); //Geräte-Adresse & Funktion aus der Antwort entfernen
                 $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RAW", $readValue, 1);
                 $value = $this->SwapValue($readValue, $MBType);
                 $this->SendDebug("SwapValue Addr $Address MBType $MBType", $value, 1);
@@ -135,10 +211,12 @@ class JoTModBus extends IPSModule {
                 if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
                     $this->SetStatus(self::STATUS_Ok_InstanceActive);
                 }
-                return $value;
+                return $value;*/
+
+                return true;
             }
         }
-        return null;
+        return false;
     }
 
     /**
@@ -188,6 +266,20 @@ class JoTModBus extends IPSModule {
             $VarType = VARIABLETYPE_FLOAT;
         }
         return $VarType;
+    }
+
+    /**
+     * Ermittelt die Endianness des aktuellen Systems
+     * @access private
+     * @return int self::MB_BigEndian oder self::MB_LittleEndian
+     */
+    private function GetSystemEndianness() {
+        $bigEndian = pack('n', 255);
+        $sysEndian = pack('S', 255);
+        if ($bigEndian === $sysEndian) {
+            return self::MB_BigEndian;
+        }
+        return self::MB_LittleEndian;
     }
 
     /**
@@ -254,17 +346,18 @@ class JoTModBus extends IPSModule {
      * Konvertiert $Value in den entsprechenden PHP-DatenTyp
      * @param string $Value die ModBus-Daten
      * @param int $VarType der ModBus-Datentyp
+     * @param int $Quantity Anzahl ModBus-Register à 16Bit
      * @return mixed Konvertierte Daten oder null, wenn Konvertierung nicht möglich ist
      * @access private
      */
-    private function ConvertMBtoPHP(string $Value, int $VarType) {
+    private function ConvertMBtoPHP(string $Value, int $VarType, int $Quantity) {
         switch ($VarType) {
             case self::VT_Boolean:
                 return ord($Value) == 0x01;
             case self::VT_SignedInteger:
                 if (((unpack('c', $Value)[1] >> 7) & 1) == 1) {//Wenn Wert negativ ist (höchstes Bit = 1)
                     $add = str_repeat('FF', PHP_INT_SIZE - strlen($Value)); //Auffüllen auf PHP_INT_SIZE (meistens 32- oder 64-Bit)...
-                    $bin = base_convert($add, 16, 2) . base_convert(unpack($this->GetPackFormat($VarType, $Value), $Value)[1], 10, 2); //...und mit Original-Wert zusammensetzen (als Binär-String)
+                    $bin = base_convert($add, 16, 2) . base_convert(unpack($this->GetPackFormat($VarType, $Value, $Quantity), $Value)[1], 10, 2); //...und mit Original-Wert zusammensetzen (als Binär-String)
                     //Da bindec immer nach unsigned umrechnet, muss Wert entsprechende umgekehrt werden
                     for ($i = 0; $i < PHP_INT_SIZE * 8; $i++) {
                         $bin[$i] = strval(intval(!(bool) $bin[$i])); //flip 0 zu 1 und umgekehrt
@@ -278,12 +371,64 @@ class JoTModBus extends IPSModule {
                 if (strlen($Value) < 2) {//String ist zu kurz für Float
                     return null;
                 }
-                return unpack($this->GetPackFormat($VarType), $Value)[1];
+                return unpack($this->GetPackFormat($VarType, $Quantity), $Value)[1];
             case self::VT_String:
                 return trim($Value);
             default:
                 return null;
         }
+    }
+
+    /**
+     * Konvertiert $Value in einen HEX-String passend zu $VarType und $Quantity
+     * @param mixed $Value die PHP-Daten
+     * @param int $VarType der ModBus-Datentyp
+     * @param int $Quantity Anzahl ModBus-Register à 16Bit
+     * @return string Konvertierte Daten
+     * @access private
+     */
+    private function ConvertPHPtoMB($Value, int $VarType, int $Quantity) {
+        //Kontrolliert mit http://www.binaryconvert.com
+        $cBytes = ($Quantity * 16 / 8); //1 Register (Quantity) entspricht 16Bit / 8 = Anzahl Bytes
+        $pf = $this->GetPackFormat($VarType, $Quantity);
+        $bin = pack($pf, $Value); //Wert in Binär-String konvertieren
+        $min = 0;
+        switch ($VarType) { //gültige Wertebereiche ermitteln
+            case self::VT_Boolean:
+                $max = 1;
+                break;
+            case self::VT_UnsignedInteger:
+                $max = unpack($pf, str_pad(chr(0xFF), $cBytes, chr(0xFF), STR_PAD_RIGHT))[1];
+                break;
+            case self::VT_Float:
+                $min = unpack($pf, str_pad(chr(0xFF) . chr(0x7F), $cBytes, chr(0xFF), STR_PAD_RIGHT))[1];
+                $max = unpack($pf, str_pad(chr(0x7F) . chr(0x7F), $cBytes, chr(0xFF), STR_PAD_RIGHT))[1];
+                break;
+            case self::VT_SignedInteger:
+                $min = str_pad(chr(0x80), $cBytes, chr(0x00), STR_PAD_RIGHT);
+                $max = str_pad(chr(0x7F), $cBytes, chr(0xFF), STR_PAD_RIGHT);
+                //Rückgabe von pack für sInt ist maschinenabhängig => $bin muss daher ev. noch in BigEndian konvertiert werden
+                if ($this->ReadAttributeInteger('SystemEndianness') === self::MB_LittleEndian) {
+                    $bin = strrev($bin); //Convert to BigEndian
+                    $min = strrev($min);
+                    $max = strrev($max);
+                }
+                $min = unpack($pf, $min)[1];
+                $max = unpack($pf, $max)[1];
+                break;
+            case self::VT_String:
+                $max = $cBytes;
+                break;
+            default:
+                $this->ThrowMessage('Unknown VarType (%s). Stopping.', $VarType);
+                exit;
+        }
+        //Gültigkeit der Daten mit $Value überprüfen, da pack $bin bereits auf die max. mögliche Länge getrimmt hat
+        if (($VarType === self::VT_String && strlen($bin) > $max) || ($VarType !== self::VT_String && ($Value < $min || $Value > $max))) {
+            $this->ThrowMessage('Value \'%1$s\' is out of range (min: \%2$s max: %3$s) for VarType \'%4$s\' with Quantity \'%5$u\'. Stopping.', $Value, $min, $max, $this->TranslateVarType($VarType), $Quantity);
+            exit;
+        }
+        return str_pad($bin, $cBytes, chr(0x00), STR_PAD_LEFT); //auf ganze Anzahl angegebene Register auffüllen (falls nötig)
     }
 
     /**
@@ -294,33 +439,70 @@ class JoTModBus extends IPSModule {
      * @return mixed Format-String oder null, wenn Konvertierung nicht möglich ist
      * @access private
      */
-    private function GetPackFormat(int $VarType, string $Value = '') {
+    private function GetPackFormat(int $VarType, int $Quantity) {
+        $cBytes = $Quantity * 16 / 8; //1 Register (Quantity) entspricht 16Bit / 8 = Anzahl Bytes
         switch ($VarType) {
+            case self::VT_Boolean:
+            case self::VT_UnsignedInteger:
+                $format = [1 => 'C', 2 => 'n', 4 => 'N', 8 => 'J']; //8Bit Unsigned, 16-/32-/64Bit Unsigned BigEndian
+                break;
             case self::VT_SignedInteger:
-                $format = [1 => 'C', 2 => 'n', 4 => 'N', 8 => 'J']; //8Bit Signed, 16-/32-/64Bit Signed BigEndian
-                if (array_key_exists(strlen($Value), $format)) {
-                    return $format[strlen($Value)];
-                }
-                return 'C*'; //8Bit Signed für alle Zeichen
+                $format = [1 => 'c', 2 => 's', 4 => 'l', 8 => 'q']; //8Bit Signed, 16-/32-/64Bit Signed Maschinenabhängig (muss ev. in BigEndian konertiert werden)
+                break;
             case self::VT_Float:
-                return 'G'; //Gleitkommazahl BigEndian
+                $format = [4 => 'G', 8 => 'E']; //32-/64Bit Gleitkommazahl BigEndian
+                break;
+            case self::VT_String:
+                $format = [$cBytes => 'a*']; //mit NUL gefüllte Zeichenkette
+                break;
             default:
-                echo "Wrong VarType($VarType) for GetPackFormat."; //Wird nur für Programmierer auftauchen, daher so
-                return null;
+                $this->ThrowMessage('Unknown VarType (%s). Stopping.', $VarType);
+                exit;
         }
+        if (array_key_exists($cBytes, $format)) {
+            return $format[$cBytes];
+        }
+        $this->ThrowMessage('Invalid Quantity (%1$u) for VarType \'%2$s\'. Stopping.', $Quantity, $this->TranslateVarType($VarType));
+        exit;
     }
 
     /**
      * Multipliziert $Value mit $Factor, sofern $Value kein String oder $Factor nicht 0 ist
      * @param mixed $Value - Original-Wert
-     * @param int|float $Factor - Multiplikationswert
+     * @param int|float $Factor - Multiplikations-/Dididierungs-Wert
+     * @param bool $Div (optional) false = multiplizieren, true = dividieren
      * @return mixed Ergebnis der Berechnung oder original $Value
      * @access private
      */
-    private function CalcFactor($Value, $Factor) {
-        if (is_string($Value) || $Factor == 0) {
+    private function CalcFactor($Value, $Factor, $Div = false) {
+        if (is_string($Value) || $Factor === 0) {
             return $Value;
+        } elseif ($Div) {
+            return $Value / $Factor;
         }
         return $Value * $Factor;
+    }
+
+    /**
+     * Übersetzt $MBTyp in lesbaren String.
+     * @param int $MBType gemäss Konstanten self::MB_TYPE_xx
+     * @return string mit entsprechendem Text.
+     * @access private
+     */
+    private function TranslateMBType(int $MBType) {
+        switch ($MBType) {
+            case self::MB_BigEndian:
+                return 'BigEndian (ABCDEFGH)';
+            case self::MB_BigEndian_ByteSwap:
+                return 'BigEndian BS (BADCFEHG)';
+            case self::MB_BigEndian_WordSwap:
+                return 'BigEndian WS (EFGHABCD)';
+            case self::MB_LittleEndian:
+                return 'LittleEndian (HGFEDCBA)';
+            case self::MB_LittleEndian_ByteSwap:
+                return 'LittleEndian BS (GHEFCDAB)';
+            case self::MB_LittleEndian_WordSwap:
+                return 'LittleEndian WS (DCBAHGFE)';
+        }
     }
 }
