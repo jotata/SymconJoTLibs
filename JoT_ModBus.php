@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   09.01.2021 22:51:03
+ * @Last Modified:   11.01.2021 22:07:02
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -78,15 +78,16 @@ class JoTModBus extends IPSModule {
     public function ModBusErrorHandler(int $ErrLevel, string $ErrMsg) {
         $action = '';
         if (is_array($this->CurrentAction)) {
-            $action = $this->CurrentAction['Action'] . ' ';
+            $action = $this->CurrentAction['Action'];
             $error = utf8_decode($ErrMsg);
             $function = $this->CurrentAction['Data']['Function'];
             $address = $this->CurrentAction['Data']['Address'];
             $quantity = $this->CurrentAction['Data']['Quantity'];
-            $data = $this->CurrentAction['Data']['Data'];
-            $ErrMsg = "MODBUS-MESSAGE: $error (Function: $function, Address: $address, Quantity: $quantity, Data: $data)";
+            $data = bin2hex($this->CurrentAction['Data']['Data']);
+            $ErrMsg = "MODBUS-MESSAGE: $error (Function: $function, Address: $address, Quantity: $quantity, Data: $data) ";
         }
-        $this->SendDebug("$action ERROR $ErrLevel", $ErrMsg, 0);
+        //$this->SendDebug("$action ERROR $ErrLevel", $ErrMsg, 0);
+        $this->ThrowMessage("$action ERROR $ErrLevel $ErrMsg");
         if ($ErrLevel == 2) {//Zeitüberschreitung
             $this->LogMessage("INSTANCE: $this->InstanceID ACTION: $action ERROR $ErrLevel $ErrMsg", KL_ERROR);
             $this->SetStatus(self::STATUS_Error_RequestTimeout);
@@ -112,7 +113,7 @@ class JoTModBus extends IPSModule {
         if ($this->CheckConnection() === true) {
             //Daten für ModBus-Gateway vorbereiten
             $sendData = [];
-            $sendData['DataID'] = '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'; //ModBus Gateway RX
+            $sendData['DataID'] = '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'; //ModBus Gateway RX/TX
             $sendData['Function'] = $Function;
             $sendData['Address'] = $Address;
             $sendData['Quantity'] = $Quantity;
@@ -127,7 +128,7 @@ class JoTModBus extends IPSModule {
 
             //Daten auswerten
             if ($readData !== false) {//kein Fehler - empfangene Daten verarbeiten
-                $readValue = substr($readData, 2); //Geräte-Adresse & Funktion aus der Antwort entfernen
+                $readValue = substr($readData, 2); //Funktion & Anzahl Daten-Bytes aus der Antwort entfernen
                 $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RX RAW", $readValue, 1);
                 $value = $this->SwapValue($readValue, $MBType);
                 $this->SendDebug("SwapValue Addr $Address MBType $MBType", $value, 1);
@@ -179,44 +180,70 @@ class JoTModBus extends IPSModule {
 
             //Daten für ModBus-Gateway vorbereiten
             $sendData = [];
-            //$sendData['DataID'] = '{018EF6B5-AB94-40C6-AA53-46943E824ACF}'; //ModBus Gateway TX?? var_dump(IPS_GetModule('{A5F663AB-C400-4FE5-B207-4D67CC030564}'));
-            $sendData['DataID'] = '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'; //ModBus Gateway
+            $sendData['DataID'] = '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'; //ModBus Gateway RX/TX
             $sendData['Function'] = $Function;
             $sendData['Address'] = $Address;
             $sendData['Quantity'] = $Quantity;
-            $sendData['Data'] = bin2hex($Value);
+            $sendData['Data'] = $Value;
 
             //Error-Handler setzen und Daten schreiben
             set_error_handler([$this, 'ModBusErrorHandler']);
             $this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
+            //Daten werden nicht via DatenFlow geschrieben, da dafür $sendData['Data'] UTF-8 codiert werden müsste,
+            //was bei Bytes mit Werten > 127 dazu führt, dass die gesendeten Daten verändert werden.
+            //Details siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
+            //Bis dieses Problem im Datenfluss von IPS behoben ist, spielen wir den ModBus-Gateway selber und schicken die Daten danach direkt an den Client-Socket.
+            //Sollte ab IPS 5.6 nicht mehr nötig sein :-)
             //$writeData = $this->SendDataToParent(json_encode($sendData));
-            $writeData = true;
+            $writeData = $this->SendDataViaClientSocket($sendData);
             restore_error_handler();
             $this->CurrentAction = false;
 
             //Daten auswerten
-            if ($writeData !== false) {//kein Fehler - empfangene Daten kontrollieren
+            if ($writeData !== false) {//kein Fehler
                 if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
                     $this->SetStatus(self::STATUS_Ok_InstanceActive);
                 }
-
-                /*$readValue = substr($readData, 2); //Geräte-Adresse & Funktion aus der Antwort entfernen
-                $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RAW", $readValue, 1);
-                $value = $this->SwapValue($readValue, $MBType);
-                $this->SendDebug("SwapValue Addr $Address MBType $MBType", $value, 1);
-                $value = $this->ConvertMBtoPHP($value, $VarType);
-                $this->SendDebug("ConvertMBtoPHP Addr $Address VarType $VarType", $value, 0);
-                $value = $this->CalcFactor($value, $Factor);
-                $this->SendDebug("CalcFactor Addr $Address Factor $Factor", $value, 0);
-                if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
-                    $this->SetStatus(self::STATUS_Ok_InstanceActive);
-                }
-                return $value;*/
-
+                //Ab IPS 5.6/fix des Flow-Problems (siehe oben), Antwort überprüfen. Bis dahin gehen wir einmal davon aus, dass der Wert korrekt geschrieben wurde...
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Erstellt mit Infos aus dem ModBus-Gateway der Instanz und $Data die ModBus TCP-Daten
+     * und sendet diese direkt an die übergeordneten Client-Socket Instanz.
+     * Grund: siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
+     * Nachteil: Generiert einen FlowHandler-Error im Log
+     * Sollte ab IPS 5.6 nicht mehr nötig sein :-)
+     * @param array $Data - mit Keys Address, Function, Quantity, Data
+     * @return mixed true bei Erfolg oder false bei Fehler
+     * @access protected
+     */
+    protected function SendDataViaClientSocket($Data) {
+        //Infos von https://ipc2u.com/articles/knowledge-base/detailed-description-of-the-modbus-tcp-protocol-with-command-examples/
+        $mbGWID = IPS_GetInstance($this->InstanceID)['ConnectionID']; //ID des ModBus-Gateways
+        $mbCSID = IPS_GetInstance($mbGWID)['ConnectionID']; //ID des ClientSockets
+        $mbGW = json_decode(IPS_GetConfiguration($mbGWID), true); //Konfiguration vom ModBus-Gateway holen
+        if ($mbGW['GatewayMode'] !== 0) {
+            $this->ThrowMessage('Writing to ModBus is only possible over ModBus TCP at the moment :-(');
+            exit;
+        }
+        $txID = rand($Data['Address'], 0xFFFF); //2Bytes - Zufällige TransactionID generieren (kommt bei Antwort zur Identifikation wieder zurück)
+
+        //FunctionCode 'Funktion + Adresse (+ Anzahl Register/Coils + Anzahl Daten-Bytes)' in Byte-Folge BigEndian erstellen
+        if ($Data['Function'] == self::FC_Write_SingleCoil || $Data['Function'] == self::FC_Write_SingleHoldingRegister) {
+            $fc = pack('Cn', $Data['Function']/*1Byte*/, $Data['Address']/*2Bytes*/);
+        } elseif ($Data['Function'] == self::FC_Write_MultipleCoils || $Data['Function'] == self::FC_Write_MultipleHoldingRegisters) {
+            $fc = pack('CnnC', $Data['Function']/*1Byte*/, $Data['Address']/*2Bytes*/, $Data['Quantity']/*2Bytes*/, strlen($Data['Data'])/*1Byte*/);
+        }
+
+        $txLen = 1 + strlen($fc . $Data['Data']); //Nachrichten-Länge = 1 Byte für UnitID + Anzahl Bytes FunctionCode + Anzahl Bytes Daten
+        $header = pack('nnnC', $txID/*2Bytes*/, 0x0000/*ModBus Protocol Identifier*/, $txLen/*2Bytes*/, $mbGW['DeviceID']/*1Byte*/); //ModBus Application Header mit Byte-Folge BigEndian erstellen
+        $sendData = $header . $fc . $Data['Data']; //TCP-Daten zusammensetzen
+
+        return CSCK_SendText($mbCSID, $sendData);
     }
 
     /**
