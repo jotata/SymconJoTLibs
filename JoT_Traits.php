@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   09.01.2021 21:01:52
+ * @Last Modified:   12.01.2021 19:53:46
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -283,6 +283,9 @@ trait RequestAction {
         if (method_exists($this, $Ident)) {
             $this->SendDebug('RequestAction', "Function: '$Ident' Parameter(s): '$Value'", 0);
             return $this->$Ident($Value); //versteckte public function aufrufen
+        }
+        if (method_exists($this, 'RequestVariableAction')) {
+            return $this->RequestVariableAction($Ident, $Value); //Funktion zum Überschreiben von parent::RequestAction aufrufen
         }
         parent::RequestAction($Ident, $Value); //offizielle Verwendung
     }
