@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   11.01.2021 22:07:02
+ * @Last Modified:   15.01.2021 13:51:47
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -371,13 +371,13 @@ class JoTModBus extends IPSModule {
 
     /**
      * Konvertiert $Value in den entsprechenden PHP-DatenTyp
-     * @param string $Value die ModBus-Daten
+     * @param string $Value die ModBus-Daten als BigEndian
      * @param int $VarType der ModBus-Datentyp
      * @param int $Quantity Anzahl ModBus-Register à 16Bit
      * @return mixed Konvertierte Daten oder null, wenn Konvertierung nicht möglich ist
      * @access private
      */
-    private function ConvertMBtoPHP(string $Value, int $VarType, int $Quantity) {
+    private function ConvertMBtoPHP1(string $Value, int $VarType, int $Quantity) {
         switch ($VarType) {
             case self::VT_Boolean:
                 return ord($Value) == 0x01;
@@ -402,6 +402,32 @@ class JoTModBus extends IPSModule {
             case self::VT_String:
                 return trim($Value);
             default:
+                return null;
+        }
+    }
+    private function ConvertMBtoPHP(string $Value, int $VarType, int $Quantity) {
+        $cBytes = ($Quantity * 16 / 8); //1 Register (Quantity) entspricht 16Bit / 8 = Anzahl Bytes
+        if (strlen($Value) !== $cBytes) {
+            $this->ThrowMessage('Length of returned data (%1$u) does not match lenght of requested data (%2$u). Please check configuration.', strlen($Value), $cBytes);
+            return null;
+        }
+        $pf = $this->GetPackFormat($VarType, $Quantity);
+        switch ($VarType) {
+            case self::VT_Boolean:
+                return boolval(unpack($pf, $Value)[1]);
+            case self::VT_SignedInteger:
+                //Daten für unpack bei sInt sind maschinenabhängig => $Value kommt als BigEndian und muss daher ev. noch in LittleEndian konvertiert werden
+                if ($this->ReadAttributeInteger('SystemEndianness') === self::MB_LittleEndian) {
+                    $Value = $this->LittleEndian($Value);
+                }
+                return unpack($pf, $Value)[1];
+            case self::VT_UnsignedInteger:
+            case self::VT_Float:
+                return unpack($pf, $Value)[1];
+            case self::VT_String:
+                return trim($Value);
+            default:
+                $this->ThrowMessage('Unknown VarType (%s). Stopping.', $VarType);
                 return null;
         }
     }
