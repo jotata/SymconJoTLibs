@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   15.01.2021 13:51:47
+ * @Last Modified:   16.01.2021 21:00:47
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -58,6 +58,7 @@ class JoTModBus extends IPSModule {
         $this->ConnectParent('{A5F663AB-C400-4FE5-B207-4D67CC030564}'); //ModBus Gateway
         $this->RegisterAttributeInteger('SystemEndianness', $this->GetSystemEndianness());
         $this->RegisterPropertyBoolean('WriteMode', false); //User muss bestätigen, dass er schreiben will
+        $this->RegisterAttributeInteger('WriteSocketID', 0); //Temporär bis DatenFlow in IPS gefixt ist
     }
 
     /**
@@ -131,7 +132,7 @@ class JoTModBus extends IPSModule {
                 $readValue = substr($readData, 2); //Funktion & Anzahl Daten-Bytes aus der Antwort entfernen
                 $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RX RAW", $readValue, 1);
                 $value = $this->SwapValue($readValue, $MBType);
-                $this->SendDebug("SwapValue Addr $Address MBType $MBType", $value, 1);
+                $this->SendDebug("SwapValue Addr $Address MBType " . $this->TranslateMBType($MBType), $value, 1);
                 $value = $this->ConvertMBtoPHP($value, $VarType, $Quantity);
                 $this->SendDebug("ConvertMBtoPHP Addr $Address VarType " . $this->TranslateVarType($VarType), $value, 0);
                 $value = $this->CalcFactor($value, $Factor);
@@ -187,24 +188,24 @@ class JoTModBus extends IPSModule {
             $sendData['Data'] = $Value;
 
             //Error-Handler setzen und Daten schreiben
-            set_error_handler([$this, 'ModBusErrorHandler']);
-            $this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
             //Daten werden nicht via DatenFlow geschrieben, da dafür $sendData['Data'] UTF-8 codiert werden müsste,
             //was bei Bytes mit Werten > 127 dazu führt, dass die gesendeten Daten verändert werden.
             //Details siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
             //Bis dieses Problem im Datenfluss von IPS behoben ist, spielen wir den ModBus-Gateway selber und schicken die Daten danach direkt an den Client-Socket.
             //Sollte ab IPS 5.6 nicht mehr nötig sein :-)
+            //set_error_handler([$this, 'ModBusErrorHandler']);
+            //$this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
             //$writeData = $this->SendDataToParent(json_encode($sendData));
             $writeData = $this->SendDataViaClientSocket($sendData);
             restore_error_handler();
             $this->CurrentAction = false;
 
             //Daten auswerten
-            if ($writeData !== false) {//kein Fehler
+            if ($writeData !== false) { //kein Fehler
                 if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
                     $this->SetStatus(self::STATUS_Ok_InstanceActive);
                 }
-                //Ab IPS 5.6/fix des Flow-Problems (siehe oben), Antwort überprüfen. Bis dahin gehen wir einmal davon aus, dass der Wert korrekt geschrieben wurde...
+                //Ab IPS 5.6/Fix des Flow-Problems (siehe oben), Antwort überprüfen. Bis dahin gehen wir einmal davon aus, dass der Wert korrekt geschrieben wurde...
                 return true;
             }
         }
@@ -213,16 +214,14 @@ class JoTModBus extends IPSModule {
 
     /**
      * Erstellt mit Infos aus dem ModBus-Gateway der Instanz und $Data die ModBus TCP-Daten
-     * und sendet diese direkt an die übergeordneten Client-Socket Instanz.
+     * und sendet diese direkt an die Client-Socket Instanz.
      * Grund: siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
-     * Nachteil: Generiert einen FlowHandler-Error im Log
      * Sollte ab IPS 5.6 nicht mehr nötig sein :-)
      * @param array $Data - mit Keys Address, Function, Quantity, Data
      * @return mixed true bei Erfolg oder false bei Fehler
      * @access protected
      */
     protected function SendDataViaClientSocket($Data) {
-        //Infos von https://ipc2u.com/articles/knowledge-base/detailed-description-of-the-modbus-tcp-protocol-with-command-examples/
         $mbGWID = IPS_GetInstance($this->InstanceID)['ConnectionID']; //ID des ModBus-Gateways
         $mbCSID = IPS_GetInstance($mbGWID)['ConnectionID']; //ID des ClientSockets
         $mbGW = json_decode(IPS_GetConfiguration($mbGWID), true); //Konfiguration vom ModBus-Gateway holen
@@ -230,6 +229,21 @@ class JoTModBus extends IPSModule {
             $this->ThrowMessage('Writing to ModBus is only possible over ModBus TCP at the moment :-(');
             exit;
         }
+
+        //Damit kein FlowHandler-Error betreffend TransactionID im Systemlog auftaucht, senden wir über einen eigenen ClientSocket
+        $mbWSID = $this->ReadAttributeInteger('WriteSocketID');
+        if ($mbWSID === 0 || @IPS_GetObject($mbWSID) === false) {
+            $mbWSID = IPS_CreateInstance('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}'); //ClientSocket
+            IPS_SetName($mbWSID, self::PREFIX . '_WriteSocket for #' . $this->InstanceID);
+            $this->WriteAttributeInteger('WriteSocketID', $mbWSID);
+        }
+        $csConfig = IPS_GetConfiguration($mbCSID);
+        if (IPS_GetConfiguration($mbWSID) !== $csConfig) {
+            IPS_SetConfiguration($mbWSID, $csConfig); //Konfiguration vom ClientSocket der Instantz zu WriteSocket übernehmen
+            IPS_ApplyChanges($mbWSID);
+        }
+
+        //Infos zu ModBus TCP Paketen: https://ipc2u.com/articles/knowledge-base/detailed-description-of-the-modbus-tcp-protocol-with-command-examples/
         $txID = rand($Data['Address'], 0xFFFF); //2Bytes - Zufällige TransactionID generieren (kommt bei Antwort zur Identifikation wieder zurück)
 
         //FunctionCode 'Funktion + Adresse (+ Anzahl Register/Coils + Anzahl Daten-Bytes)' in Byte-Folge BigEndian erstellen
@@ -243,7 +257,11 @@ class JoTModBus extends IPSModule {
         $header = pack('nnnC', $txID/*2Bytes*/, 0x0000/*ModBus Protocol Identifier*/, $txLen/*2Bytes*/, $mbGW['DeviceID']/*1Byte*/); //ModBus Application Header mit Byte-Folge BigEndian erstellen
         $sendData = $header . $fc . $Data['Data']; //TCP-Daten zusammensetzen
 
-        return CSCK_SendText($mbCSID, $sendData);
+        if (IPS_GetInstance($mbWSID)['InstanceStatus'] === 102) { //Instanz ist aktiv
+            return CSCK_SendText($mbWSID, $sendData);
+        }
+        $this->ThrowMessage('WriteSocket-Instance #%1$u not ready.');
+        return false;
     }
 
     /**
@@ -317,6 +335,7 @@ class JoTModBus extends IPSModule {
         $status = $this->HasActiveParent();
         if ($status === false) {
             $this->SetStatus(self::STATUS_Error_PreconditionRequired);
+            $this->ThrowMessage('No connection to ModBus-Device.');
         }
         return $status;
     }
@@ -377,34 +396,6 @@ class JoTModBus extends IPSModule {
      * @return mixed Konvertierte Daten oder null, wenn Konvertierung nicht möglich ist
      * @access private
      */
-    private function ConvertMBtoPHP1(string $Value, int $VarType, int $Quantity) {
-        switch ($VarType) {
-            case self::VT_Boolean:
-                return ord($Value) == 0x01;
-            case self::VT_SignedInteger:
-                if (((unpack('c', $Value)[1] >> 7) & 1) == 1) {//Wenn Wert negativ ist (höchstes Bit = 1)
-                    $add = str_repeat('FF', PHP_INT_SIZE - strlen($Value)); //Auffüllen auf PHP_INT_SIZE (meistens 32- oder 64-Bit)...
-                    $bin = base_convert($add, 16, 2) . base_convert(unpack($this->GetPackFormat($VarType, $Value, $Quantity), $Value)[1], 10, 2); //...und mit Original-Wert zusammensetzen (als Binär-String)
-                    //Da bindec immer nach unsigned umrechnet, muss Wert entsprechende umgekehrt werden
-                    for ($i = 0; $i < PHP_INT_SIZE * 8; $i++) {
-                        $bin[$i] = strval(intval(!(bool) $bin[$i])); //flip 0 zu 1 und umgekehrt
-                    }
-                    return (bindec($bin) + 1) * -1; //positive Zahl wieder in Negative umwandeln
-                }
-                return intval(bin2hex($Value), 16);
-            case self::VT_UnsignedInteger:
-                return intval(bin2hex($Value), 16);
-            case self::VT_Float:
-                if (strlen($Value) < 2) {//String ist zu kurz für Float
-                    return null;
-                }
-                return unpack($this->GetPackFormat($VarType, $Quantity), $Value)[1];
-            case self::VT_String:
-                return trim($Value);
-            default:
-                return null;
-        }
-    }
     private function ConvertMBtoPHP(string $Value, int $VarType, int $Quantity) {
         $cBytes = ($Quantity * 16 / 8); //1 Register (Quantity) entspricht 16Bit / 8 = Anzahl Bytes
         if (strlen($Value) !== $cBytes) {
