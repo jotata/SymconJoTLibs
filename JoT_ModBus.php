@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   16.01.2021 21:00:47
+ * @Last Modified:   17.01.2021 15:35:44
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -77,6 +77,7 @@ class JoTModBus extends IPSModule {
      * @access private
      */
     public function ModBusErrorHandler(int $ErrLevel, string $ErrMsg) {
+        //Fehler-Ausgabe darf nicht mit $this->ThrowMessage (oder echo) gemacht werden, da sonst Konfigurations-Form nicht mehr geladen werden kann
         $action = '';
         if (is_array($this->CurrentAction)) {
             $action = $this->CurrentAction['Action'];
@@ -87,8 +88,7 @@ class JoTModBus extends IPSModule {
             $data = bin2hex($this->CurrentAction['Data']['Data']);
             $ErrMsg = "MODBUS-MESSAGE: $error (Function: $function, Address: $address, Quantity: $quantity, Data: $data) ";
         }
-        //$this->SendDebug("$action ERROR $ErrLevel", $ErrMsg, 0);
-        $this->ThrowMessage("$action ERROR $ErrLevel $ErrMsg");
+        $this->SendDebug("$action ERROR $ErrLevel", $ErrMsg, 0);
         if ($ErrLevel == 2) {//Zeitüberschreitung
             $this->LogMessage("INSTANCE: $this->InstanceID ACTION: $action ERROR $ErrLevel $ErrMsg", KL_ERROR);
             $this->SetStatus(self::STATUS_Error_RequestTimeout);
