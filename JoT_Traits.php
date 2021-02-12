@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   12.01.2021 19:53:46
+ * @Last Modified:   12.02.2021 10:35:32
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -258,10 +258,15 @@ trait Translation {
         } else {
             $Msg = $this->Translate($Msg);
         }
-        $func = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2)[1]['function'];
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+        $func = $trace[1]['function'];
         $fMsg = 'INSTANCE: ' . $this->InstanceID . " ACTION: $func: $Msg";
         $this->SendDebug($func, $Msg, 0);
-        echo "$fMsg\r\n";
+        if (array_search('GetConfigurationForm', array_column($trace, 'function')) !== false){
+            $this->LogMessage($fMsg, KL_ERROR);
+        } else { //Echo nur Ausgeben, wenn Meldung nicht in einem Aufruf von GetConfigurationForm ausgegeben wird, da es ansonsten zu einem Fehler kommt
+            echo "$fMsg\r\n";
+        }
         return $fMsg;
     }
 }
