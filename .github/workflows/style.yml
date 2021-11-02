@@ -1,16 +1,3 @@
-/**
- * @Package:         workflows
- * @File:            style copy.yml
- * @Create Date:     02.11.2021 20:02:38
- * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   02.11.2021 20:03:22
- * @Modified By:     Jonathan Tanner
- * @Copyright:       Copyright(c) 2021 by JoT Tanner
- * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
- *                   (http://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
- */
-
-
 name: Check Style
 
 on: [workflow_dispatch, push, pull_request]
