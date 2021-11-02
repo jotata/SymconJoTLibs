@@ -1,10 +1,24 @@
 <?php
+
+declare(strict_types=1);
+/**
+ * @Package:         .style
+ * @File:            .php-cs-fixer.php
+ * @Create Date:     02.11.2021 20:08:49
+ * @Author:          Jonathan Tanner - admin@tanner-info.ch
+ * @Last Modified:   02.11.2021 20:09:42
+ * @Modified By:     Jonathan Tanner
+ * @Copyright:       Copyright(c) 2021 by JoT Tanner
+ * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
+ *                   (http://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
+ */
+
 $finder = PhpCsFixer\Finder::create()
     ->exclude('libs/vendor')
     ->in(__DIR__);
 
-return PhpCsFixer\Config::create()
-    ->setRules([
+$config = new PhpCsFixer\Config();
+return $config->setRules([
         'align_multiline_comment' => [
             'comment_type' => 'all_multiline'
         ],
@@ -14,7 +28,7 @@ return PhpCsFixer\Config::create()
         ],
         //backtick_to_shell_exec
         'binary_operator_spaces' => [
-            'align_double_arrow' => true
+            'operators' => ['=>' => 'align']
         ],
         'blank_line_after_namespace' => true,
         'blank_line_after_opening_tag' => true,
@@ -36,11 +50,13 @@ return PhpCsFixer\Config::create()
         'concat_space' => [
             'spacing' => 'one'
         ],
+        'constant_case' => true,
         //date_time_immutable
         'declare_strict_types' => true,
         'declare_equal_normalize' => true,
         'declare_strict_types' => true,
         //dir_constant
+        'echo_tag_syntax' => true,
         'elseif' => true,
         'encoding' => true,
         //ereg_to_preg 
@@ -68,7 +84,6 @@ return PhpCsFixer\Config::create()
         //list_syntax 
         'logical_operators' => true,
         'lowercase_cast' => true,
-        'lowercase_constants' => true,
         'lowercase_keywords' => true,
         'lowercase_static_reference' => true,
         'magic_constant_casing' => true,
@@ -105,7 +120,6 @@ return PhpCsFixer\Config::create()
         'no_multiline_whitespace_around_double_arrow' => true,
         //no_null_property_initialization
         //no_short_bool_cast
-        'no_short_echo_tag' => true,
         'no_singleline_whitespace_before_semicolons'=> true,
         'no_spaces_after_function_name' => true,
         'no_spaces_around_offset' => true,
@@ -168,14 +182,12 @@ return PhpCsFixer\Config::create()
         'switch_case_space' => true,
         'ternary_operator_spaces' => true,
         //ternary_to_null_coalescing
-        'trailing_comma_in_multiline_array' => false,
+        'trailing_comma_in_multiline' => false,
         'trim_array_spaces' => true,
         'unary_operator_spaces' => true,
         'visibility_required' => true,
         //void_return
-        'whitespace_after_comma_in_array' => true,
+        'whitespace_after_comma_in_array' => true
         //yoda_style
     ])
-    ->setFinder($finder)
-    ->setIndent("    ")
-    ->setLineEnding("\n");
+    ->setFinder($finder);

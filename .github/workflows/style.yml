@@ -1,3 +1,16 @@
+/**
+ * @Package:         workflows
+ * @File:            style copy.yml
+ * @Create Date:     02.11.2021 20:02:38
+ * @Author:          Jonathan Tanner - admin@tanner-info.ch
+ * @Last Modified:   02.11.2021 20:03:22
+ * @Modified By:     Jonathan Tanner
+ * @Copyright:       Copyright(c) 2021 by JoT Tanner
+ * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
+ *                   (http://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)
+ */
+
+
 name: Check Style
 
 on: [workflow_dispatch, push, pull_request]
@@ -14,7 +27,7 @@ jobs:
         submodules: false
 
     - name: Install latest PHP-CS-Fixer
-      run: wget https://cs.symfony.com/download/php-cs-fixer-v2.phar
+      run: wget https://github.com/FriendsOfPHP/PHP-CS-Fixer/releases/download/v3.2.1/php-cs-fixer.phar
 
     - name: Run Checks
-      run: PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer-v2.phar fix --config=.style/.php_cs -v --dry-run --allow-risky=yes .
+      run: PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer.phar fix --config=.style/.php-cs-fixer.php -v --dry-run --allow-risky=yes .
