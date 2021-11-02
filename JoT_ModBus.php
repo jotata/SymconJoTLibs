@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   02.11.2021 16:30:20
+ * @Last Modified:   02.11.2021 18:02:57
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -71,7 +71,8 @@ class JoTModBus extends IPSModule {
     }
 
     /**
-     * PHP Error-Handler - wird aufgerufen wenn ModBus einen Fehler zurück gibt
+     * PHP Error-Handler - wird aufgerufen wenn ModBus-Gateway einen Fehler ausgibt.
+     * Dies darf beim Laden eines Konfigurationsforms nicht per echo geschehen, da dieses sonst fehlschlägt.
      * @param int $errNr PHP-ErrorNummer
      * @param string $errMsg PHP-Fehlermeldung
      * @access private
@@ -105,10 +106,10 @@ class JoTModBus extends IPSModule {
         if ($result['Function'] < 128) { //Kein Fehler - Im Fehlerfall wird in der Antwort das erste Bit auf 1 gesetzt (=> Function +128)
             return false;
         }
-        $errNames = array('ILLEGAL FUNCTION', 'ILLEGAL DATA ADDRESS', 'ILLEGAL DATA VALUE', 'SERVER DEVICE FAILURE', 'ACKNOWLEDGE', 'SERVER DEVICE BUSY', 'MEMORY PARITY ERROR', 'GATEWAY PATH UNAVAILABLE');
+        $errNames = ['ILLEGAL FUNCTION', 'ILLEGAL DATA ADDRESS', 'ILLEGAL DATA VALUE', 'SERVER DEVICE FAILURE', 'ACKNOWLEDGE', 'SERVER DEVICE BUSY', 'MEMORY PARITY ERROR', 'GATEWAY PATH UNAVAILABLE'];
         if ($result['ErrNr'] >= count($errNames)) {
             return $result['ErrNr'] . ' - UNKNOWN ERROR';
-        } 
+        }
         return $result['ErrNr'] . ' - ' . $errNames[$result['ErrNr'] - 1];
     }
 
