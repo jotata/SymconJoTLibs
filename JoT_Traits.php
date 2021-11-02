@@ -262,7 +262,7 @@ trait Translation {
         $func = $trace[1]['function'];
         $fMsg = 'INSTANCE: ' . $this->InstanceID . " ACTION: $func: $Msg";
         $this->SendDebug($func, $Msg, 0);
-        if (array_search('GetConfigurationForm', array_column($trace, 'function')) !== false){
+        if (array_search('GetConfigurationForm', array_column($trace, 'function')) !== false) {
             $this->LogMessage($fMsg, KL_ERROR);
         } else { //Echo nur Ausgeben, wenn Meldung nicht in einem Aufruf von GetConfigurationForm ausgegeben wird, da es ansonsten zu einem Fehler kommt
             echo "$fMsg\r\n";
