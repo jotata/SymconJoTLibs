@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   17.01.2021 15:35:44
+ * @Last Modified:   02.11.2021 16:12:36
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -96,6 +96,23 @@ class JoTModBus extends IPSModule {
     }
 
     /**
+     * Prüft ob der ModBus-Server einen Fehler meldet (wird das ev. bereits vom ModBus-GW gemacht?)
+     * @param string $Response - die Antwort vom Server
+     * @return mixed false wenn alles i.O. oder String mit Fehler
+     */
+    protected function CheckModBusException(string $Response) {
+        $result = unpack('CFunction/CErrNr', $Response);
+        if ($result['Function'] < 128) { //Kein Fehler - Im Fehlerfall wird in der Antwort das erste Bit auf 1 gesetzt (=> Function +128)
+            return false;
+        }
+        $errNames = array('ILLEGAL FUNCTION', 'ILLEGAL DATA ADDRESS', 'ILLEGAL DATA VALUE', 'SERVER DEVICE FAILURE', 'ACKNOWLEDGE', 'SERVER DEVICE BUSY', 'MEMORY PARITY ERROR', 'GATEWAY PATH UNAVAILABLE');
+        if ($result['ErrNr'] >= count($errNames)) {
+            return $result['ErrNr'] . ' - UNKNOWN ERROR';
+        } 
+        return $result['ErrNr'] . ' - ' . $errNames[$result['ErrNr'] - 1];
+    }
+
+    /**
      * Liest ModBus-Daten vom Gerät aus
      * @param int $Function - ModBus-Function (siehe const FC_Read_xyz)
      * @param int $Address - Start-Register
@@ -123,24 +140,31 @@ class JoTModBus extends IPSModule {
             //Error-Handler setzen und Daten lesen
             set_error_handler([$this, 'ModBusErrorHandler']);
             $this->CurrentAction = ['Action' => 'ReadModBus', 'Data' => $sendData];
-            $readData = $this->SendDataToParent(json_encode($sendData));
+            $response = $this->SendDataToParent(json_encode($sendData));
             restore_error_handler();
             $this->CurrentAction = false;
 
             //Daten auswerten
-            if ($readData !== false) {//kein Fehler - empfangene Daten verarbeiten
-                $readValue = substr($readData, 2); //Funktion & Anzahl Daten-Bytes aus der Antwort entfernen
-                $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RX RAW", $readValue, 1);
-                $value = $this->SwapValue($readValue, $MBType);
-                $this->SendDebug("SwapValue Addr $Address MBType " . $this->TranslateMBType($MBType), $value, 1);
-                $value = $this->ConvertMBtoPHP($value, $VarType, $Quantity);
-                $this->SendDebug("ConvertMBtoPHP Addr $Address VarType " . $this->TranslateVarType($VarType), $value, 0);
-                $value = $this->CalcFactor($value, $Factor);
-                $this->SendDebug("CalcFactor Addr $Address Factor (*) $Factor", $value, 0);
-                if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
-                    $this->SetStatus(self::STATUS_Ok_InstanceActive);
+            if ($response !== false) {//kein Fehler seitens IPS - empfangene Daten verarbeiten
+                //Auf ModBus-Fehler prüfen
+                $error = $this->CheckModBusException($response);
+                if ($error === false) { //alles i.O.
+                    $readValue = substr($response, 2); //Function & Anzahl Daten-Bytes aus der Antwort entfernen
+                    $this->SendDebug("ReadModBus FC $Function Addr $Address x $Quantity RX RAW", $readValue, 1);
+                    $value = $this->SwapValue($readValue, $MBType);
+                    $this->SendDebug("SwapValue Addr $Address MBType " . $this->TranslateMBType($MBType), $value, 1);
+                    $value = $this->ConvertMBtoPHP($value, $VarType, $Quantity);
+                    $this->SendDebug("ConvertMBtoPHP Addr $Address VarType " . $this->TranslateVarType($VarType), $value, 0);
+                    $value = $this->CalcFactor($value, $Factor);
+                    $this->SendDebug("CalcFactor Addr $Address Factor (*) $Factor", $value, 0);
+                    if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
+                        $this->SetStatus(self::STATUS_Ok_InstanceActive);
+                    }
+                    return $value;
+                } else { //ModBus-Fehler
+                    $msg = $this->ThrowMessage('Error while reading data: %s', "$error (Function: $Function, Address: $Address, Quantity: $Quantity)");
+                    $this->LogMessage($msg, KL_ERROR);
                 }
-                return $value;
             }
         }
         return null;
@@ -185,7 +209,8 @@ class JoTModBus extends IPSModule {
             $sendData['Function'] = $Function;
             $sendData['Address'] = $Address;
             $sendData['Quantity'] = $Quantity;
-            $sendData['Data'] = $Value;
+            //$sendData['Data'] = $Value;
+            $sendData['Data'] = utf8_encode($Value);
 
             //Error-Handler setzen und Daten schreiben
             //Daten werden nicht via DatenFlow geschrieben, da dafür $sendData['Data'] UTF-8 codiert werden müsste,
@@ -193,20 +218,26 @@ class JoTModBus extends IPSModule {
             //Details siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
             //Bis dieses Problem im Datenfluss von IPS behoben ist, spielen wir den ModBus-Gateway selber und schicken die Daten danach direkt an den Client-Socket.
             //Sollte ab IPS 5.6 nicht mehr nötig sein :-)
-            //set_error_handler([$this, 'ModBusErrorHandler']);
-            //$this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
-            //$writeData = $this->SendDataToParent(json_encode($sendData));
-            $writeData = $this->SendDataViaClientSocket($sendData);
+            set_error_handler([$this, 'ModBusErrorHandler']);
+            $this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
+            $response = $this->SendDataToParent(json_encode($sendData));
+            //$response = $this->SendDataViaClientSocket($sendData);
             restore_error_handler();
             $this->CurrentAction = false;
 
             //Daten auswerten
-            if ($writeData !== false) { //kein Fehler
+            if ($response !== false) { //kein Fehler seitens IPS
                 if ($this->GetStatus() !== self::STATUS_Ok_InstanceActive) {
                     $this->SetStatus(self::STATUS_Ok_InstanceActive);
                 }
-                //Ab IPS 5.6/Fix des Flow-Problems (siehe oben), Antwort überprüfen. Bis dahin gehen wir einmal davon aus, dass der Wert korrekt geschrieben wurde...
-                return true;
+                //Auf ModBus-Fehler prüfen
+                $error = $this->CheckModBusException($response);
+                if ($error === false) { //alles i.O.
+                    return true;
+                } else { //ModBus-Fehler
+                    $msg = $this->ThrowMessage('Error while writing data: %s', "$error (Function: $Function, Address: $Address, Quantity: $Quantity, Data: " . bin2hex($Value) . ')');
+                    $this->LogMessage($msg, KL_ERROR);
+                }
             }
         }
         return false;
@@ -469,7 +500,7 @@ class JoTModBus extends IPSModule {
         }
         //Gültigkeit der Daten mit $Value überprüfen, da pack $bin bereits auf die max. mögliche Länge getrimmt hat
         if (($VarType === self::VT_String && strlen($bin) > $max) || ($VarType !== self::VT_String && ($Value < $min || $Value > $max))) {
-            $this->ThrowMessage('Value \'%1$s\' is out of range (min: \%2$s max: %3$s) for VarType \'%4$s\' with Quantity \'%5$u\'. Stopping.', $Value, $min, $max, $this->TranslateVarType($VarType), $Quantity);
+            $this->ThrowMessage('Value \'%1$s\' is out of range (min: %2$s max: %3$s) for VarType \'%4$s\' with Quantity \'%5$u\'. Stopping.', $Value, $min, $max, $this->TranslateVarType($VarType), $Quantity);
             exit;
         }
         return str_pad($bin, $cBytes, chr(0x00), STR_PAD_LEFT); //auf ganze Anzahl angegebene Register auffüllen (falls nötig)
