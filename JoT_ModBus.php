@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_ModBus.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   02.11.2021 16:12:36
+ * @Last Modified:   02.11.2021 16:30:20
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -209,19 +209,12 @@ class JoTModBus extends IPSModule {
             $sendData['Function'] = $Function;
             $sendData['Address'] = $Address;
             $sendData['Quantity'] = $Quantity;
-            //$sendData['Data'] = $Value;
             $sendData['Data'] = utf8_encode($Value);
 
             //Error-Handler setzen und Daten schreiben
-            //Daten werden nicht via DatenFlow geschrieben, da dafür $sendData['Data'] UTF-8 codiert werden müsste,
-            //was bei Bytes mit Werten > 127 dazu führt, dass die gesendeten Daten verändert werden.
-            //Details siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
-            //Bis dieses Problem im Datenfluss von IPS behoben ist, spielen wir den ModBus-Gateway selber und schicken die Daten danach direkt an den Client-Socket.
-            //Sollte ab IPS 5.6 nicht mehr nötig sein :-)
             set_error_handler([$this, 'ModBusErrorHandler']);
             $this->CurrentAction = ['Action' => 'WriteModBus', 'Data' => $sendData];
             $response = $this->SendDataToParent(json_encode($sendData));
-            //$response = $this->SendDataViaClientSocket($sendData);
             restore_error_handler();
             $this->CurrentAction = false;
 
@@ -240,58 +233,6 @@ class JoTModBus extends IPSModule {
                 }
             }
         }
-        return false;
-    }
-
-    /**
-     * Erstellt mit Infos aus dem ModBus-Gateway der Instanz und $Data die ModBus TCP-Daten
-     * und sendet diese direkt an die Client-Socket Instanz.
-     * Grund: siehe https://www.symcon.de/forum/threads/41294-Modbus-TCP-BOOL-Wert-senden?p=447472#post447472
-     * Sollte ab IPS 5.6 nicht mehr nötig sein :-)
-     * @param array $Data - mit Keys Address, Function, Quantity, Data
-     * @return mixed true bei Erfolg oder false bei Fehler
-     * @access protected
-     */
-    protected function SendDataViaClientSocket($Data) {
-        $mbGWID = IPS_GetInstance($this->InstanceID)['ConnectionID']; //ID des ModBus-Gateways
-        $mbCSID = IPS_GetInstance($mbGWID)['ConnectionID']; //ID des ClientSockets
-        $mbGW = json_decode(IPS_GetConfiguration($mbGWID), true); //Konfiguration vom ModBus-Gateway holen
-        if ($mbGW['GatewayMode'] !== 0) {
-            $this->ThrowMessage('Writing to ModBus is only possible over ModBus TCP at the moment :-(');
-            exit;
-        }
-
-        //Damit kein FlowHandler-Error betreffend TransactionID im Systemlog auftaucht, senden wir über einen eigenen ClientSocket
-        $mbWSID = $this->ReadAttributeInteger('WriteSocketID');
-        if ($mbWSID === 0 || @IPS_GetObject($mbWSID) === false) {
-            $mbWSID = IPS_CreateInstance('{3CFF0FD9-E306-41DB-9B5A-9D06D38576C3}'); //ClientSocket
-            IPS_SetName($mbWSID, self::PREFIX . '_WriteSocket for #' . $this->InstanceID);
-            $this->WriteAttributeInteger('WriteSocketID', $mbWSID);
-        }
-        $csConfig = IPS_GetConfiguration($mbCSID);
-        if (IPS_GetConfiguration($mbWSID) !== $csConfig) {
-            IPS_SetConfiguration($mbWSID, $csConfig); //Konfiguration vom ClientSocket der Instantz zu WriteSocket übernehmen
-            IPS_ApplyChanges($mbWSID);
-        }
-
-        //Infos zu ModBus TCP Paketen: https://ipc2u.com/articles/knowledge-base/detailed-description-of-the-modbus-tcp-protocol-with-command-examples/
-        $txID = rand($Data['Address'], 0xFFFF); //2Bytes - Zufällige TransactionID generieren (kommt bei Antwort zur Identifikation wieder zurück)
-
-        //FunctionCode 'Funktion + Adresse (+ Anzahl Register/Coils + Anzahl Daten-Bytes)' in Byte-Folge BigEndian erstellen
-        if ($Data['Function'] == self::FC_Write_SingleCoil || $Data['Function'] == self::FC_Write_SingleHoldingRegister) {
-            $fc = pack('Cn', $Data['Function']/*1Byte*/, $Data['Address']/*2Bytes*/);
-        } elseif ($Data['Function'] == self::FC_Write_MultipleCoils || $Data['Function'] == self::FC_Write_MultipleHoldingRegisters) {
-            $fc = pack('CnnC', $Data['Function']/*1Byte*/, $Data['Address']/*2Bytes*/, $Data['Quantity']/*2Bytes*/, strlen($Data['Data'])/*1Byte*/);
-        }
-
-        $txLen = 1 + strlen($fc . $Data['Data']); //Nachrichten-Länge = 1 Byte für UnitID + Anzahl Bytes FunctionCode + Anzahl Bytes Daten
-        $header = pack('nnnC', $txID/*2Bytes*/, 0x0000/*ModBus Protocol Identifier*/, $txLen/*2Bytes*/, $mbGW['DeviceID']/*1Byte*/); //ModBus Application Header mit Byte-Folge BigEndian erstellen
-        $sendData = $header . $fc . $Data['Data']; //TCP-Daten zusammensetzen
-
-        if (IPS_GetInstance($mbWSID)['InstanceStatus'] === 102) { //Instanz ist aktiv
-            return CSCK_SendText($mbWSID, $sendData);
-        }
-        $this->ThrowMessage('WriteSocket-Instance #%1$u not ready.');
         return false;
     }
 
