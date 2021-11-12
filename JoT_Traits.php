@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   12.02.2021 10:35:32
+ * @Last Modified:   12.11.2021 11:01:16
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -76,11 +76,11 @@ trait VariableProfile {
         if (array_key_exists('Icon', $Profile)) {
             IPS_SetVariableProfileIcon($Name, $Profile['Icon']);
         }
-        if (array_key_exists('Prefix', $Profile) && array_key_exists('Suffix', $Profile)) {
-            IPS_SetVariableProfileText($Name, $Profile['Prefix'], $Profile['Suffix']);
+        if (array_key_exists('Prefix', $Profile) || array_key_exists('Suffix', $Profile)) {
+            IPS_SetVariableProfileText($Name, @$Profile['Prefix'], @$Profile['Suffix']); //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
         }
-        if (array_key_exists('MinValue', $Profile) && array_key_exists('MaxValue', $Profile) && array_key_exists('StepSize', $Profile)) {
-            IPS_SetVariableProfileValues($Name, $Profile['MinValue'], $Profile['MaxValue'], $Profile['StepSize']);
+        if (array_key_exists('MinValue', $Profile) || array_key_exists('MaxValue', $Profile) || array_key_exists('StepSize', $Profile)) { //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
+            IPS_SetVariableProfileValues($Name, @$Profile['MinValue'], @$Profile['MaxValue'], @$Profile['StepSize']);
         }
         if ($Profile['ProfileType'] == VARIABLETYPE_FLOAT && array_key_exists('Digits', $Profile)) {
             IPS_SetVariableProfileDigits($Name, $Profile['Digits']);
@@ -107,7 +107,7 @@ trait VariableProfile {
             if (!is_null(self::PREFIX)) {
                 $Prefix = self::PREFIX;
             }
-            if (substr($Name, strlen("$Prefix.")) !== "$Prefix.") {//Modul-Prefix zu Namen hinzufügen
+            if (substr($Name, 0, strlen("$Prefix.")) !== "$Prefix.") {//Modul-Prefix zu Namen hinzufügen, wenn nicht bereits vorhanden
                 $Name = "$Prefix.$Name";
             }
         }
