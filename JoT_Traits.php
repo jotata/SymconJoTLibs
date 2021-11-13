@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   12.11.2021 11:01:16
+ * @Last Modified:   13.11.2021 16:37:12
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -77,10 +77,10 @@ trait VariableProfile {
             IPS_SetVariableProfileIcon($Name, $Profile['Icon']);
         }
         if (array_key_exists('Prefix', $Profile) || array_key_exists('Suffix', $Profile)) {
-            IPS_SetVariableProfileText($Name, @$Profile['Prefix'], @$Profile['Suffix']); //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
+            IPS_SetVariableProfileText($Name, strval(@$Profile['Prefix']), strval(@$Profile['Suffix'])); //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
         }
-        if (array_key_exists('MinValue', $Profile) || array_key_exists('MaxValue', $Profile) || array_key_exists('StepSize', $Profile)) { //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
-            IPS_SetVariableProfileValues($Name, @$Profile['MinValue'], @$Profile['MaxValue'], @$Profile['StepSize']);
+        if (array_key_exists('MinValue', $Profile) || array_key_exists('MaxValue', $Profile) || array_key_exists('StepSize', $Profile)) { 
+            IPS_SetVariableProfileValues($Name, floatval(@$Profile['MinValue']), floatval(@$Profile['MaxValue']), floatval(@$Profile['StepSize'])); //Falls nicht definiert, wird für den jeweiligen Wert NULL (0) übergeben
         }
         if ($Profile['ProfileType'] == VARIABLETYPE_FLOAT && array_key_exists('Digits', $Profile)) {
             IPS_SetVariableProfileDigits($Name, $Profile['Digits']);
