@@ -6,7 +6,7 @@ declare(strict_types=1);
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   13.11.2021 16:37:12
+ * @Last Modified:   21.11.2021 20:26:49
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -281,7 +281,7 @@ trait RequestAction {
      * Benötigt die versteckte Function mehrere Parameter, müssen diese als JSON in $Value übergeben werden.
      * Idee: https://www.symcon.de/forum/threads/38463-RegisterTimer-zum-Aufruf-nicht-%C3%B6ffentlicher-Funktionen?p=370053#post370053
      * @param string $Ident - Function oder Variable zum aktualisieren / ausführen.
-     * @param string $Value - Wert für die Variable oder Parameter für den Befehl
+     * @param string $Value - Wert für die Variable oder Parameter für den Befehl -> mehrere Werte als JSON-codierter String übergeben
      * @access public
      */
     public function RequestAction($Ident, $Value) {
@@ -293,6 +293,17 @@ trait RequestAction {
             return $this->RequestVariableAction($Ident, $Value); //Funktion zum Überschreiben von parent::RequestAction aufrufen
         }
         parent::RequestAction($Ident, $Value); //offizielle Verwendung
+    }
+
+    /**
+     * Ruft die Funktion UpdateFormField der Instanz auf um dynamisch aus einem Konfigurationsform heraus Felder anzupassen
+     * Auf diese Weise wird die Function, wie bei RequestAction beschrieben, als Instanz-Funktion versteckt
+     * @param string $JSONArrayWithFieldParameterValue json_codiertes Array('Field' => 'NAME', 'Parameter' => 'EIGENSCHAFT', 'Value' => WERT)
+     * @access private
+     */
+    private function DynamicFormField(string $JSONArrayWithFieldParameterValue) {
+        $par = json_decode($JSONArrayWithFieldParameterValue);
+        $this->UpdateFormField($par->Field, $par->Parameter, $par->Value);
     }
 }
 
