@@ -9,7 +9,7 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   23.11.2021 22:02:15
+ * @Last Modified:   23.11.2021 22:46:51
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -82,7 +82,7 @@ trait VariableProfile {
         if (array_key_exists('Prefix', $Profile) || array_key_exists('Suffix', $Profile)) {
             IPS_SetVariableProfileText($Name, strval(@$Profile['Prefix']), strval(@$Profile['Suffix'])); //Falls nicht definiert, wird für den jeweiligen Wert NULL ('') übergeben
         }
-        if (array_key_exists('MinValue', $Profile) || array_key_exists('MaxValue', $Profile) || array_key_exists('StepSize', $Profile)) { 
+        if (array_key_exists('MinValue', $Profile) || array_key_exists('MaxValue', $Profile) || array_key_exists('StepSize', $Profile)) {
             IPS_SetVariableProfileValues($Name, floatval(@$Profile['MinValue']), floatval(@$Profile['MaxValue']), floatval(@$Profile['StepSize'])); //Falls nicht definiert, wird für den jeweiligen Wert NULL (0) übergeben
         }
         if ($Profile['ProfileType'] == VARIABLETYPE_FLOAT && array_key_exists('Digits', $Profile)) {
@@ -315,61 +315,29 @@ trait RequestAction {
  */
 trait ModuleInfo {
     /**
-     * Gibt den Inhalt der library.json als Objekt zurück
-     * @return stdClass library.json
-     * @access private
-     */
-    private function GetLibraryInfo() {
-        return json_decode(file_get_contents(__DIR__ . '/../library.json'));
-    }
-
-    /**
-     * Gibt den Inhalt aller module.json als Array/Objekt zurück
-     * @param optional string $Prefix des Moduls
-     * @return array mit einer stdClass pro Modul
-     * @access private
-     */
-    private function GetModuleInfo(string $Prefix = '') {
-        $modules = [];
-        foreach (glob(__DIR__ . '/../*', GLOB_ONLYDIR) as $dir) { //alle Module suchen
-            if (file_exists($dir . '/module.json')) {
-                $m = json_decode(file_get_contents($dir . '/module.json'));
-            }
-            if ($Prefix !== '' && strtoupper($m->prefix) == strtoupper($Prefix)){
-                return $m;
-            }
-            $modules[] = $m;
-        }
-        return $modules;
-    }
-
-    /**
      * Fügt die Modul-Informationen ganz oben im Konfigurationsform ein
      * @param string $Form Inhalt des Konfigurationsformulars
      * @return string Konfigurationsform mit Modul-Informationen
      * @access private
      */
     private function AddModuleInfoAsElement(string $Form) {
-        $library = $this->GetLibraryInfo();
-        if (defined(self::PREFIX)) {
-            $module = $this->GetModuleInfo(self::PREFIX);
-        } else {
-            $module = $this->GetModuleInfo();
-            $module = array_shift($module);
-        }
+        $inst = IPS_GetInstance($this->InstanceID);
+        $module = IPS_GetModule($inst['ModuleInfo']['ModuleID']);
+        $library = IPS_GetLibrary($module['LibraryID']);
 
         //Modul-Informationen zusammenstellen
-        $name = $library->name;
-        if ($library->name !== $module->name) {
-            $name .= ' - ' . $module->name;
+        $name = $library['Name'];
+        if ($name !== $module['ModuleName']) {
+            $name .= ' - ' . $module['ModuleName'];
         }
-        $version = 'V'.$library->version;
-        if ($library->build != 0) {
-            $version .= ' (Build: ' . $library->build;
-            if ($library->date != 0) {
-                $version .= ' - ' . date('d.m.y H:i' , $library->date);
+        $aliases = implode(' - ', $module['Aliases']);
+        $version = 'V' . $library['Version'];
+        if ($library['Build'] != 0) {
+            $version .= ' (Build: ' . $library['Build'];
+            if ($library['Date'] != 0) {
+                $version .= ' - ' . date('d.m.y H:i', $library['Date']);
             }
-            $version .= ')' ;
+            $version .= ')';
         }
         $expanded = false;
         $counter = intval($this->GetBuffer('Donation'));
@@ -383,8 +351,8 @@ trait ModuleInfo {
 
         //Variablen im Template ersetzen
         $info = file_get_contents(__DIR__ . '/moduleinfo.json');
-        $info = str_replace(['$Expanded', '$Name', '$Version', '$Author'], [$expanded, $name, $version, $library->author], $info);
-        
+        $info = str_replace(['$Expanded', '$Name', '$Aliases', '$Version', '$Author', '$LibraryUrl'], [$expanded, $name, $aliases, $version, $library['Author'], $library['URL']], $info);
+
         //Modul-Infos ganz oben in Form hinzufügen
         return str_replace('"elements":[', '"elements":[' . $info . ',', $Form);
     }

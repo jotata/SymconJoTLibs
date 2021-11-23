@@ -1,7 +1,7 @@
 {
     "type": "ExpansionPanel",
     "name": "ModuleInfo",
-    "caption": "$Name $Version by $Author", 
+    "caption": "$Name - $Aliases $Version - by $Author", 
     "expanded": "$Expanded",
     "items": [
         {
@@ -33,6 +33,10 @@
         },{
             "type": "ProgressBar", 
             "width": "100%"
+        },{
+            "type": "Button",
+            "caption": "Hilfe / Support",
+            "onClick": "echo '$LibraryUrl';"
         }
     ]
 }
