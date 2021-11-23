@@ -1,12 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
+use RequestAction as GlobalRequestAction;
+
 /**
  * @Package:         libs
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   21.11.2021 20:26:49
+ * @Last Modified:   23.11.2021 22:02:15
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -304,6 +307,86 @@ trait RequestAction {
     private function DynamicFormField(string $JSONArrayWithFieldParameterValue) {
         $par = json_decode($JSONArrayWithFieldParameterValue);
         $this->UpdateFormField($par->Field, $par->Parameter, $par->Value);
+    }
+}
+
+/**
+ * Funktionen zum Auslesen / Anzeigen der Modul-Informationen.
+ */
+trait ModuleInfo {
+    /**
+     * Gibt den Inhalt der library.json als Objekt zurück
+     * @return stdClass library.json
+     * @access private
+     */
+    private function GetLibraryInfo() {
+        return json_decode(file_get_contents(__DIR__ . '/../library.json'));
+    }
+
+    /**
+     * Gibt den Inhalt aller module.json als Array/Objekt zurück
+     * @param optional string $Prefix des Moduls
+     * @return array mit einer stdClass pro Modul
+     * @access private
+     */
+    private function GetModuleInfo(string $Prefix = '') {
+        $modules = [];
+        foreach (glob(__DIR__ . '/../*', GLOB_ONLYDIR) as $dir) { //alle Module suchen
+            if (file_exists($dir . '/module.json')) {
+                $m = json_decode(file_get_contents($dir . '/module.json'));
+            }
+            if ($Prefix !== '' && strtoupper($m->prefix) == strtoupper($Prefix)){
+                return $m;
+            }
+            $modules[] = $m;
+        }
+        return $modules;
+    }
+
+    /**
+     * Fügt die Modul-Informationen ganz oben im Konfigurationsform ein
+     * @param string $Form Inhalt des Konfigurationsformulars
+     * @return string Konfigurationsform mit Modul-Informationen
+     * @access private
+     */
+    private function AddModuleInfoAsElement(string $Form) {
+        $library = $this->GetLibraryInfo();
+        if (defined(self::PREFIX)) {
+            $module = $this->GetModuleInfo(self::PREFIX);
+        } else {
+            $module = $this->GetModuleInfo();
+            $module = array_shift($module);
+        }
+
+        //Modul-Informationen zusammenstellen
+        $name = $library->name;
+        if ($library->name !== $module->name) {
+            $name .= ' - ' . $module->name;
+        }
+        $version = 'V'.$library->version;
+        if ($library->build != 0) {
+            $version .= ' (Build: ' . $library->build;
+            if ($library->date != 0) {
+                $version .= ' - ' . date('d.m.y H:i' , $library->date);
+            }
+            $version .= ')' ;
+        }
+        $expanded = false;
+        $counter = intval($this->GetBuffer('Donation'));
+        if (--$counter === 0) { //nur wenn $counter bereits initialisiert war (>=1)
+            $expanded = true;
+        }
+        if ($counter < 0) { //counter (re)initialisieren
+            $counter = random_int(10, 30);
+        }
+        $this->SetBuffer('Donation', $counter);
+
+        //Variablen im Template ersetzen
+        $info = file_get_contents(__DIR__ . '/moduleinfo.json');
+        $info = str_replace(['$Expanded', '$Name', '$Version', '$Author'], [$expanded, $name, $version, $library->author], $info);
+        
+        //Modul-Infos ganz oben in Form hinzufügen
+        return str_replace('"elements":[', '"elements":[' . $info . ',', $Form);
     }
 }
 
