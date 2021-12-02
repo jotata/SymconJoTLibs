@@ -289,20 +289,21 @@ if (defined('__PHPUNIT_PHAR__')) { //wird von phpunit (während Unit-Tests) defi
          */
         public function TestFunction(string $Function, array $Params) {
             if (method_exists($this, $Function)) {
-                return call_user_func_array([$this, $Function], $Params); //Funktion des Modules mit allen Parametern aufrufen 
+                return call_user_func_array([$this, $Function], $Params); //Funktion des Modules mit allen Parametern aufrufen
             }
             throw new Exception("Unknown Module Function ($Function)");
         }
     }
 } else { //Test-Funktion im Normal-Betrieb nicht verfügbar
-    trait TestFunction {}
+    trait TestFunction {
+    }
 }
 /**
  * Funktion zum Vertecken von public functions
  */
 trait RequestAction {
     use TestFunction;
-    
+
     /**
      * IPS-Funktion IPS_RequestAction($InstanceID, $Ident, $Value).
      * Wird verwendet um aus dem WebFront Variablen zu "schalten" (offiziell) oder public functions zu verstecken (inoffiziell)
