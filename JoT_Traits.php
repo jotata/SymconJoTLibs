@@ -9,7 +9,7 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   23.11.2021 22:46:51
+ * @Last Modified:   02.12.2021 23:37:35
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -275,9 +275,34 @@ trait Translation {
 }
 
 /**
+ * Spezial-Funktionen für PHPUnit-Tests
+ * Wird nur geladen, wenn PHPUnit-Test läuft
+ */
+if (defined('__PHPUNIT_PHAR__')) { //wird von phpunit (während Unit-Tests) definiert
+    trait TestFunction {
+        /**
+         * Kann nur in PHPUnit-Tests aufgerufen werden.
+         * Ruft eine beliebige Funktion des Modules auf und gibt deren Wert zurück
+         * @param string $Function welche aufgerufen werden soll
+         * @param array $Param mit allen Parametern welche an die Funktion weitergegeben werden sollen
+         * @access public
+         */
+        public function TestFunction(string $Function, array $Params) {
+            if (method_exists($this, $Function)) {
+                return call_user_func_array([$this, $Function], $Params); //Funktion des Modules mit allen Parametern aufrufen 
+            }
+            throw new Exception("Unknown Module Function ($Function)");
+        }
+    }
+} else { //Test-Funktion im Normal-Betrieb nicht verfügbar
+    trait TestFunction {}
+}
+/**
  * Funktion zum Vertecken von public functions
  */
 trait RequestAction {
+    use TestFunction;
+    
     /**
      * IPS-Funktion IPS_RequestAction($InstanceID, $Ident, $Value).
      * Wird verwendet um aus dem WebFront Variablen zu "schalten" (offiziell) oder public functions zu verstecken (inoffiziell)
