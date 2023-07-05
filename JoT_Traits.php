@@ -9,7 +9,7 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   23.11.2021 22:46:51
+ * @Last Modified:   05.07.2023 18:44:45
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -161,7 +161,7 @@ trait Translation {
             if (is_string($replace)) {
                 $replace = "\"$replace\"";
             }
-            $JSON = str_replace("\"$search\"", $replace, $JSON);
+            $JSON = str_replace("\"$search\"", strval($replace), $JSON);
         }
         return $JSON;
     }
