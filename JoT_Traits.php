@@ -9,11 +9,7 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
-<<<<<<< HEAD
- * @Last Modified:   05.07.2023 18:44:45
-=======
- * @Last Modified:   03.12.2021 16:49:46
->>>>>>> f3eff158455c4d0b74e45943b3f8703515c4f6c4
+ * @Last Modified:   05.07.2023 19:06:20
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
