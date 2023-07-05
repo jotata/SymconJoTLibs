@@ -9,7 +9,11 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
+<<<<<<< HEAD
  * @Last Modified:   05.07.2023 18:44:45
+=======
+ * @Last Modified:   03.12.2021 16:49:46
+>>>>>>> f3eff158455c4d0b74e45943b3f8703515c4f6c4
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -384,5 +388,30 @@ trait Semaphore {
      */
     private function Unlock(string $Ident) {
         IPS_SemaphoreLeave($Ident);
+    }
+}
+
+/**
+ * Spezial-Funktionen für PHPUnit-Tests
+ * Wird nur geladen, wenn PHPUnit-Test läuft
+ */
+if (defined('__PHPUNIT_PHAR__')) { //wird von phpunit (während Unit-Tests) definiert
+    trait TestFunction {
+        /**
+         * Kann nur in PHPUnit-Tests aufgerufen werden.
+         * Ruft eine beliebige Function des Modules auf und gibt deren Wert zurück
+         * @param string $Function welche aufgerufen werden soll
+         * @param array $Param mit allen Parametern welche an die Funktion weitergegeben werden sollen
+         * @access public
+         */
+        public function TestFunction(string $Function, array $Params) {
+            if (method_exists($this, $Function)) {
+                return call_user_func_array([$this, $Function], $Params); //Funktion des Modules mit allen Parametern aufrufen
+            }
+            throw new Exception("Unknown Module Function ($Function)");
+        }
+    }
+} else { //Test-Funktion im Normal-Betrieb nicht verfügbar
+    trait TestFunction {
     }
 }
