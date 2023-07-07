@@ -9,7 +9,7 @@ use RequestAction as GlobalRequestAction;
  * @File:            JoT_Traits.php
  * @Create Date:     09.07.2020 16:54:15
  * @Author:          Jonathan Tanner - admin@tanner-info.ch
- * @Last Modified:   05.07.2023 19:06:20
+ * @Last Modified:   07.07.2023 10:27:25
  * @Modified By:     Jonathan Tanner
  * @Copyright:       Copyright(c) 2020 by JoT Tanner
  * @License:         Creative Commons Attribution Non Commercial Share Alike 4.0
@@ -96,8 +96,8 @@ trait VariableProfile {
     }
 
     /**
-     * Überprüft ob der Profil-Name neu ist. Falls ja, wird sichergestellt, dass er den Modul-Prefix enthält.
-     * Ist das Profil bereits vorhanden, wird der Name nicht verändert.
+     * Stellt sicher, dass der Profil-Name den Modul-Prefix enthält.
+     * Leere Profile-Namen und solche von IPS Default-Profilen werden nicht verändert.
      * Dies erlaubt es, im Modul die Profile ohne Prefix anzugeben und trotzdem bei neuen Profilen den Prefix voranzustellen.
      * Damit wird sichergestellt, dass die Best Practice für Module eingehalten wird (https://gist.github.com/paresy/236bfbfcb26e6936eaae919b3cfdfc4f).
      * @param string $Name der zu prüfende Profil-Name.
@@ -105,13 +105,15 @@ trait VariableProfile {
      * @access protected
      */
     protected function CheckProfileName(string $Name) {
-        if ($Name !== '' && !IPS_VariableProfileExists($Name)) {
-            $Prefix = 'JoT';
-            if (!is_null(self::PREFIX)) {
-                $Prefix = self::PREFIX;
-            }
-            if (substr($Name, 0, strlen("$Prefix.")) !== "$Prefix.") {//Modul-Prefix zu Namen hinzufügen, wenn nicht bereits vorhanden
-                $Name = "$Prefix.$Name";
+        if ($Name !== '') { //Bei der Massen-Erstellung von Variablen können auch solche dabei sein, welchen kein Profil ($Name = '') zugewiesen werden soll. Diese akzeptieren wir einfach so.
+            if (substr($Name, 0, 1) !== "~") {//IPS-Default-Profile akzeptieren wir einfach so (falls nicht vorhanden, wird IPS eine entsprechende Meldung ausspucken)
+                $Prefix = 'JoT';
+                if (!is_null(self::PREFIX)) {
+                    $Prefix = self::PREFIX;
+                }
+                if (substr($Name, 0, strlen("$Prefix.")) !== "$Prefix.") {//Modul-Prefix zu Namen hinzufügen, wenn nicht bereits vorhanden
+                    $Name = "$Prefix.$Name";
+                }
             }
         }
         return $Name;
