@@ -5,10 +5,10 @@ jobs:
   style:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - name: Checkout module
+      uses: actions/checkout@master
       with:
         submodules: false
-    - name: Install latest PHP-CS-Fixer
-      run: wget https://github.com/PHP-CS-Fixer/PHP-CS-Fixer/releases/latest/download/php-cs-fixer.phar
-    - name: Run Checks
-      run: PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer.phar fix --config=.style/.php-cs-fixer.php -v --dry-run --allow-risky=yes .
+    - name: Check Symcon code styles
+      uses: symcon/action-style@master
+      
