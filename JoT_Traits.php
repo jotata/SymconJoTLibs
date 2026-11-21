@@ -19,8 +19,12 @@ use RequestAction as GlobalRequestAction;
 /**
  * Allgemeine Konstanten
  */
-const DEBUG_FORMAT_TEXT = 0;
-const DEBUG_FORMAT_HEX = 1;
+if (!defined('DEBUG_FORMAT_TEXT')) {
+    define('DEBUG_FORMAT_TEXT', 0);
+}
+if (!defined('DEBUG_FORMAT_HEX')) {
+    define('DEBUG_FORMAT_HEX', 1);
+}
 
 /**
  * Trait mit Hilfsfunktionen für Variablen-Profile.
